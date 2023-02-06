@@ -1,0 +1,9 @@
+project:
+  output-dir: _docs
+
+website:
+  title: "asr_teach"
+  site-url: "https://enzokro.github.io/asr_teach"
+  description: "conversational speech tools"
+  repo-branch: main
+  repo-url: "https://github.com/enzokro/asr_teach"

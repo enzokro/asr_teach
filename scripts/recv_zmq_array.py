@@ -22,7 +22,7 @@ def recv_array(socket, flags=0, copy=True, track=False):
     return A.reshape(md['shape'])
 
 
-def main():
+def main(context=None):
 
     # create the PULL socket that receives data
     context = context or zmq.Context()

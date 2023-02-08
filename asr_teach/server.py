@@ -6,9 +6,14 @@ __all__ = ['recv_array', 'parse_results', 'WhisperServer']
 # %% ../nbs/03_server.ipynb 1
 import sys
 
+import zmq
+import numpy as np
+
+import whisper
+
 # %% ../nbs/03_server.ipynb 2
 from .audio import AudioBuffer
-from .utils import ZMQ_ARGS
+from .utils import ZMQ_ARGS, PROTOCOL, ADDR, PORT
 
 # %% ../nbs/03_server.ipynb 3
 def recv_array(socket, flags=0, copy=True, track=False):
@@ -23,7 +28,7 @@ def recv_array(socket, flags=0, copy=True, track=False):
     md = socket.recv_json(flags=flags)
     msg = socket.recv(flags=flags, copy=copy, track=track)
     buf = memoryview(msg)
-    arr = np.frombuffer(buf, dtype=md['dtype']).reshape(md['shape'])
+    arr = np.frombuffer(buf, dtype=md['dtype']).reshape(md['shape']).squeeze()
     return arr
 
 
@@ -50,38 +55,60 @@ def parse_results(result):
 class WhisperServer:
     '''Runs a whisper model on audio streaming over a port.
     '''
-    def __init__(self, socket, buffer_size: int, model_name: str):
+    def __init__(self,
+                 context = None,
+                 buffer_size: int = 16_000,
+                 model_name: str = 'base',
+                 protocol: str = PROTOCOL,
+                 addr: str = ADDR,
+                 port: int = PORT):
+        
+        # create the socket to receive streaming audio
+        context = context or zmq.Context()
+        socket = context.socket(zmq.PULL)
+        socket.connect(f'{protocol}://{addr}:{port}')
         self.socket = socket
-        self.model_name = model_name
+        
+        # initialize the audio buffer
         self.buffer = AudioBuffer(size=buffer_size)
+        
+        # load the whisper model
+        self.model_name = model_name
         self.model = whisper.load_model(model_name)
 
+        
     def accumulate(self, zmq_args=ZMQ_ARGS):
         '''Reads in data via `socket` and puts it into the audio buffer.
         '''
-        data = recv_array(self.socket, **zmq_args)
-        self.buffer.accumulate(data)
+        arr = recv_array(self.socket, **zmq_args)
+        self.buffer.accumulate(arr)
 
+        
     def buffer_ready(self):
         '''Checks if the buffer is full with fresh data.
         '''
         return self.buffer.is_full
 
+    
     def transcribe(self):
         '''Runs whisper trascription on the full audio buffer.
         '''
-        data = self.buffer.get_data()
+#         data = self.buffer.get_data()
+        data = recv_array(self.socket)
+#         data = np.array(data).astype(np.float32)
         audio = whisper.pad_or_trim(data)
         result = self.model.transcribe(audio)
         parsed = parse_results(result)
         print('\n'.join(seg['text'] for seg in parsed))
         self.reset_buffer()
 
+        
     def reset_buffer(self):
         '''Prepares the buffer for the next audio window.'''
         self.buffer.reset()
         self.buffer.flush()
 
+        
     def run(self):
         '''Main server function.
         
@@ -89,7 +116,17 @@ class WhisperServer:
         TODO: graceful shutdown
         '''
         while True:
-            self.accumulate()
-            if self.buffer_ready():
+            try:
+#                 self.accumulate()
+#                 if self.buffer_ready():
                 self.transcribe()
+
+            except KeyboardInterrupt:
+                print('User keyboard interrupt.')
+                print('Stopping server')
+                break
+                print('Server stopped')
+            except Exception as e:
+                print(f'Exception: {e}')
+                raise
 

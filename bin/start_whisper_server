@@ -1,0 +1,13 @@
+import fire
+
+from asr_teach.server import WhisperServer
+from asr_teach.utils import SAMPLE_RATE, BUFFER_SECONDS
+
+def server():
+    server = WhisperServer(
+        buffer_size = int(SAMPLE_RATE * BUFFER_SECONDS)
+    )
+    server.run()
+
+
+fire.Fire(server)

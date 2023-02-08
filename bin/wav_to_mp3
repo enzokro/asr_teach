@@ -1,0 +1,14 @@
+#!/usr/bin/env python
+import fire
+import pydub
+
+def convert(
+        infile: str,
+        outfile: str,
+):
+    sound = pydub.AudioSegment.from_wav(infile)
+    sound.export(outfile, format="mp3")
+
+
+if __name__ == '__main__':
+    fire.Fire(convert)

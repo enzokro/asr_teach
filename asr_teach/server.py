@@ -8,6 +8,7 @@ import sys
 
 import zmq
 import numpy as np
+from fastcore.basics import store_attr
 
 import whisper
 
@@ -61,31 +62,24 @@ class WhisperServer:
     TODO: proper logging
     '''
     def __init__(self,
-                 context = None,
                  buffer_size: int = 16_000,
                  model_name: str = 'small',
                  threshold: float = 0.,
                  protocol: str = PROTOCOL,
                  addr: str = ADDR,
                  port: int = PORT):
+        store_attr()
         
         # create the socket to receive streaming audio
-        context = context or zmq.Context()
+        context = zmq.Context()
         socket = context.socket(zmq.PULL)
         socket.connect(f'{protocol}://{addr}:{port}')
         self.socket = socket
-        
-        ## NOTE: skipping buffer via sounddevice library
-        ## initialize the audio buffer
-        #self.buffer = AudioBuffer(size=buffer_size)
         
         # load the whisper model
         self.model_name = model_name
         self.model = whisper.load_model(model_name)
         
-        # threshold for transcriptions
-        self.threshold = threshold
-
         
     def recv_data(self, zmq_args=ZMQ_ARGS):
         '''Reads in audio array from `self.socket`.

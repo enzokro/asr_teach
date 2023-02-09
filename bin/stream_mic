@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import fire
 
-from asr_teach.mic import MicStream
+from asr_teach.mic import SpeechRecogMic
 from asr_teach.utils import SAMPLE_RATE, DEVICE, BLOCK_DURATION
 from asr_teach.utils import ZMQ_ARGS, PROTOCOL, ADDR, PORT
 
@@ -12,10 +12,10 @@ def stream(sample_rate: float = SAMPLE_RATE,
     '''Entrypoint for live microphone streaming over a port.
     '''
     # create and start the microphone stream
-    mic = MicStream(
-        sample_rate,
-        device,
-        block_duration,
+    mic = SpeechRecogMic(
+        sample_rate=sample_rate,
+        device=device,
+        # block_duration,
         **kwargs)
     mic.run()
 

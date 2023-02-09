@@ -17,15 +17,14 @@ class AudioBuffer:
                  size=SAMPLE_RATE * BUFFER_SECONDS, 
                  dtype=DTYPE):
         
-        # initialize the buffer
+        # initialize the data buffer
         self.size = size
-        self.data = []#np.zeros(size, dtype=dtype)
+        self.data = []
         
-        # head for data buffer
-        self.ptr = 0 
         # holds leftover samples
-        self.rem = None 
-        # flag for whether the buffer is full
+        self.rem = [] 
+        
+        # flag for when the buffer is full
         self.is_full = False 
 
         
@@ -37,30 +36,14 @@ class AudioBuffer:
         
         if len(self.data) >= self.size:
             self.is_full = True
-            self.rem = self.data[self.size:]
+            self.rem.extend(self.data[self.size:])
             self.data = self.data[:self.size]
         else:
             self.data.extend(data)
-        
-#         # handle buffer overflow
-#         if self.ptr + num_samples >= self.size:
-
-#             # flag the buffer as full
-#             self.is_full = True
-
-#             # store the leftover samples
-#             valid = self.size - self.ptr
-#             self.data[self.ptr:] = data[:valid]
-#             self.rem = data[valid:]
-        
-#         # buffer in the data
-#         else:
-#             self.data[self.ptr: self.ptr + num_samples] = data
-#             self.ptr += num_samples
-
+            
             
     def get_data(self):
-        '''Gets the data buffer.
+        '''Returns the data buffer.
         '''
         return self.data
     
@@ -68,16 +51,5 @@ class AudioBuffer:
     def reset(self):
         '''Resets buffer head for new, incoming data.
         '''
-        self.ptr = 0
-        self.is_full = False
-        self.data = []
+        self.rem, self.data = [], self.rem
 
-        
-    def flush(self):
-        '''Puts remainder data on the buffer and moves the head forward.
-        '''
-        if self.rem:
-            rem_sz = len(self.rem)
-            self.data[:rem_sz] = self.rem
-            self.ptr += rem_sz
-            self.rem = None

@@ -34,15 +34,17 @@ class MicStream:
         socket.bind(f'{protocol}://{addr}:{port}')
         self.socket = socket
         
-        # queue to send over the data
+        # queue to hold live mic data
         self.q = q or queue.Queue()
 
-        # set the sample rate
+        # setting the sample rate and mic buffer size
         self.sample_rate = sample_rate or sd.query_devices(device, 'input')['default_samplerate']
         self.num_samples = int(sample_rate * block_duration)
+        self.blocksize = self.num_samples // 1000
 
-        def callback(indata, frames, time, status):
-            '''Places audio data on the queue for sending over zmq port.
+        
+        def enqueue_audio(indata, frames, time, status):
+            '''Places audio data on the queue.
             '''
             if any(indata):
                 self.q.put(indata)
@@ -50,14 +52,19 @@ class MicStream:
         # create the microphone streaming object
         self.stream = sd.InputStream(device=device,
                                      channels=1,
-                                     callback=callback,
+                                     callback=enqueue_audio,
                                      dtype=dtype,
-                                     blocksize=self.num_samples // 1000,
-                                     samplerate=sample_rate)
+                                     blocksize=self.blocksize,
+                                     samplerate=self.sample_rate)
+        
         
     def send_audio(self, indata, flags=0, copy=True, track=False):
-        '''Sends the first message with array shape and data type.
+        '''Sends a numpy array in a multi-part message.
+        
+        The first part of the message has the shape and type of the array.
+        The second message has the raw array bytes. 
         '''
+        # send the array info
         md = {'dtype': str(indata.dtype),
               'shape': indata.shape}
         self.socket.send_json(md, zmq.SNDMORE)
@@ -68,32 +75,27 @@ class MicStream:
     def run(self):
         '''Streams audio until the user stops or interrupts the process.
         '''
-        # start streaming with context manager
+        # start the microphone stream
         self.stream.start()
+        print('Streaming live mic audio...')
         while True:
             try:
+                # send any audio on the queue
                 if not self.q.empty():
                     self.send_audio(self.q.get())
+                    
             except KeyboardInterrupt:
-                print('User keyboard interrupt.')
-                print('stopping stream')
+                print('User keyboard interrupt, stopping mic...')
                 self.stream.close()
                 break
                 print('stream stopped')
+                
             except Exception as e:
                 print(f'Exception: {e}')
                 raise
+                
+        print('Live mic stopped.')
             
-#         try:
-#             # start streaming with context manager
-#             with self.stream:
-#                 sd.wait(self.num_samples)
-#         except KeyboardInterrupt:
-#             print('User set keyboard interrupt.')
-#             sys.exit(0)
-#         except Exception as e:
-#             print(f'Exception: {e}')
-#             raise
 
 # %% ../nbs/01_mic.ipynb 5
 def stream(sample_rate: float = SAMPLE_RATE,

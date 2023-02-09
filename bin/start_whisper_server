@@ -3,9 +3,10 @@ import fire
 from asr_teach.server import WhisperServer
 from asr_teach.utils import SAMPLE_RATE, BUFFER_SECONDS
 
-def server():
+def server(model_name: str = 'base'):
     server = WhisperServer(
-        buffer_size = int(SAMPLE_RATE * BUFFER_SECONDS)
+        buffer_size = int(SAMPLE_RATE * BUFFER_SECONDS),
+        model_name = model_name,
     )
     server.run()
 

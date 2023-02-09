@@ -20,14 +20,17 @@ def recv_array(socket, flags=0, copy=True, track=False):
     '''Receives a numpy array over `socket`.
     
     Assumes a two-part message:
-        First message has array data type and shape.
+        First message has the array data-type and shape.
         Second message has the raw array bytes. 
         
     Returns the appropriately cast and reshaped numpy array. 
     '''
+    # receive the array shape and type
     md = socket.recv_json(flags=flags)
+    # receive the array bytes 
     msg = socket.recv(flags=flags, copy=copy, track=track)
     buf = memoryview(msg)
+    # convert bytes into a flat audio array
     arr = np.frombuffer(buf, dtype=md['dtype']).reshape(md['shape']).squeeze()
     return arr
 
@@ -35,9 +38,9 @@ def recv_array(socket, flags=0, copy=True, track=False):
 def parse_results(result):
     '''Extracts helpful fields from the output of whisper's `transcribe`.
     
-    Information parsed:
+    Information parsed for each segment:
         - The transcribed text.  
-        - Segment start and stop times in seconds.  
+        - Start and stop times of the segment in seconds.  
         - Log probability of the transcription.  
         - Probability that the segment had no speech.  
     '''
@@ -54,11 +57,14 @@ def parse_results(result):
 # %% ../nbs/03_server.ipynb 4
 class WhisperServer:
     '''Runs a whisper model on audio streaming over a port.
+    
+    TODO: proper logging
     '''
     def __init__(self,
                  context = None,
                  buffer_size: int = 16_000,
-                 model_name: str = 'base',
+                 model_name: str = 'small',
+                 threshold: float = 0.,
                  protocol: str = PROTOCOL,
                  addr: str = ADDR,
                  port: int = PORT):
@@ -69,64 +75,65 @@ class WhisperServer:
         socket.connect(f'{protocol}://{addr}:{port}')
         self.socket = socket
         
-        # initialize the audio buffer
-        self.buffer = AudioBuffer(size=buffer_size)
+        ## NOTE: skipping buffer via sounddevice library
+        ## initialize the audio buffer
+        #self.buffer = AudioBuffer(size=buffer_size)
         
         # load the whisper model
         self.model_name = model_name
         self.model = whisper.load_model(model_name)
+        
+        # threshold for transcriptions
+        self.threshold = threshold
 
         
-    def accumulate(self, zmq_args=ZMQ_ARGS):
-        '''Reads in data via `socket` and puts it into the audio buffer.
+    def recv_data(self, zmq_args=ZMQ_ARGS):
+        '''Reads in audio array from `self.socket`.
         '''
         arr = recv_array(self.socket, **zmq_args)
-        self.buffer.accumulate(arr)
-
-        
-    def buffer_ready(self):
-        '''Checks if the buffer is full with fresh data.
-        '''
-        return self.buffer.is_full
+        return arr
 
     
     def transcribe(self):
         '''Runs whisper trascription on the full audio buffer.
         '''
-#         data = self.buffer.get_data()
-        data = recv_array(self.socket)
-#         data = np.array(data).astype(np.float32)
+        # get the data over the socket
+        print('Waiting for audio...')
+        data = self.recv_data()
+        print('Audio received.')
+        
+        # pad it for whisper
+        # TODO: insert data into pre-buffered 30-second Whisper window
         audio = whisper.pad_or_trim(data)
+        
+        # transcribe the audio and parse the results
+        print('Parsing audio...')
         result = self.model.transcribe(audio)
         parsed = parse_results(result)
-        print('\n'.join(seg['text'] for seg in parsed))
-        self.reset_buffer()
-
+        print('Audio parsed')
         
-    def reset_buffer(self):
-        '''Prepares the buffer for the next audio window.'''
-        self.buffer.reset()
-        self.buffer.flush()
+        # TODO: transcribed text shown on simple GUI
+        # TODO: simple thresholding to avoid garbage transcriptions
+        print('\n'.join(seg['text'] for seg in parsed if seg['logprob'] > -0.9))
+        print('\n'.join(str(seg['logprob']) for seg in parsed))
 
-        
+         
     def run(self):
         '''Main server function.
         
-        TODO: catch interrupts (keyboard and signals)
-        TODO: graceful shutdown
+        TODO: catch stopping signals (SIGINT, SIGTERM)
         '''
+        print('Starting server...')
         while True:
             try:
-#                 self.accumulate()
-#                 if self.buffer_ready():
                 self.transcribe()
 
             except KeyboardInterrupt:
-                print('User keyboard interrupt.')
-                print('Stopping server')
+                print('User interrupt, stopping server...')
                 break
-                print('Server stopped')
+                
             except Exception as e:
                 print(f'Exception: {e}')
                 raise
+        print('Server stopped')
 

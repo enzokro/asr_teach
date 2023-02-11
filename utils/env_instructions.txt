@@ -1,0 +1,67 @@
+# Instructions to build the environment on Mac M1
+
+## 1) Install the mamba package manager if you don't have it
+
+Download the installer for ARM Mac from this link:
+https://github.com/conda-forge/miniforge#mambaforge
+
+Follow the prompts and pick the defaults.
+
+## 1.1) Create the mamba python environment
+
+The only hard requirement is python3.9
+$ mamba create -n whisper_asr python=3.9
+
+## 1.2) Activate the newly create python environment
+$ mamba activate whisper_asr
+
+
+## 2) Install portaudio 
+
+We need to install this via homebrew, the python binaries are not building on M1:
+
+$ brew install portaudio
+
+
+## 3) Install the requirements file inside of the utils/ folder
+
+$ python -m pip install -r utils/requirements.txt
+
+
+## 4) From the base repo path, install the repo as an editable module as follows
+
+$ cd /path/to/repo/asr_teach
+$ python -m pip install -e .
+
+
+## 5) Running the main library pieces
+
+You will need two terminal windows (or tabs).
+One window will start the Whisper server.
+The other window will start the live, streaming microphone.
+
+You need to activate the python environment in both windows:
+$ mamba activate whisper_asr
+
+Below are the instructions to be ran in each window, from the base repo path. 
+
+## 5.1) Start the Whisper server
+
+This starts the smallest possible Whisper model.
+Specifically, a model that was optimized for English speech.
+
+$ python bin/start_whisper_server --model_name tiny.en
+
+## 5.2) Start the streaming microphone
+
+We use the command below from the base repo path
+NOTE: the device can be either 0 or 1, depending on your setup.
+$ python bin/stream_mic --block_duration 4000 --sample_rate 16_000 --device 0
+
+NOTE: if you find that the audio from the mic is sent too quickly (and you'd like to speak more naturally, or for longer), you can pass an extra `pause` flag. This flag determines how long to wait (pause) after you've stopped speaking before sending the microphone data.
+
+
+# Conclusion
+
+At this point, you should have a working environment and repo for the basic live speech transcription.
+

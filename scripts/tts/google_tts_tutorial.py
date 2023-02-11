@@ -1,5 +1,11 @@
 import google.cloud.texttospeech as tts
 
+'''
+Need to export valid Google Cloud credentials for tts to work.
+Assuming the credentials are in the `key.json` file:
+
+$ export GOOGLE_APPLICATION_CREDENTIALS=~/key.json
+'''
 
 def list_voices(language_code=None):
     client = tts.TextToSpeechClient()

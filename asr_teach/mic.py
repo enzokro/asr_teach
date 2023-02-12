@@ -3,7 +3,7 @@
 # %% auto 0
 __all__ = ['AudioStream', 'SoundDeviceMic', 'SpeechRecogMic']
 
-# %% ../nbs/01_mic.ipynb 2
+# %% ../nbs/01_mic.ipynb 4
 import io
 import sys 
 import queue
@@ -16,11 +16,11 @@ import speech_recognition as sr
 from pydub import AudioSegment
 from fastcore.basics import store_attr
 
-# %% ../nbs/01_mic.ipynb 3
+# %% ../nbs/01_mic.ipynb 6
 from .utils import SAMPLE_RATE, DEVICE, BLOCK_DURATION, DTYPE
 from .utils import ZMQ_ARGS, PROTOCOL, ADDR, PORT
 
-# %% ../nbs/01_mic.ipynb 4
+# %% ../nbs/01_mic.ipynb 9
 class AudioStream:
     def __init__(self,
                  sample_rate: float = None,
@@ -29,56 +29,72 @@ class AudioStream:
                  addr: str = ADDR,
                  port: int = PORT,
                  protocol: str = PROTOCOL):
+        """Base audio stream class.
+        """
         store_attr()
         
-        # create the socket
+        # creates the ZMQ socket
         context = zmq.Context()
         socket = context.socket(zmq.PUSH)
         socket.bind(f'{protocol}://{addr}:{port}')
         self.socket = socket
-        
-        # queue to hold live mic data
-        self.q = queue.Queue()
-        
+
         
     def run(self):
+        """Runs the microphone streaming.
+        """
         raise NotImplementedError
         
     def setup_stream(self):
+        """Initializes and sets up a specific stream.
+        """
         raise NotImplementedError
         
     def send_audio(self, indata, flags=0, copy=True, track=False):
-        '''Sends a numpy array in a multi-part message.
-        
+        '''Sends a numpy array as a multi-part message.
+    
         The first part of the message has the shape and type of the array.
-        The second message has the raw array bytes. 
+        The second message has the raw array bytes.
+        Both pieces of information are needed to correctly deserialize the array at the receiver. 
         '''
-        # send the array info
+        # sends the array's shape and type info
         md = {'dtype': str(indata.dtype),
               'shape': indata.shape}
         self.socket.send_json(md, zmq.SNDMORE)
-        # sends the array data
+        # sends the raw array bytes
         self.socket.send(indata, flags, copy=copy, track=track)
         
 
-# %% ../nbs/01_mic.ipynb 5
+# %% ../nbs/01_mic.ipynb 12
 class SoundDeviceMic(AudioStream):
     def __init__(self, *args,
                  block_duration: int = 2500,
                  **kwargs):
+        '''Streams continuous live audio with the `sounddevice` library.
+        '''
         super().__init__(*args, **kwargs)
         store_attr()
         self.setup_stream()
         
     def setup_stream(self):
+        '''Prepares the `sounddevice` stream.
+        
+        First, we figure out the sampling rate and audio buffer sizes.
+        Next we initialize a queue for the buffered audio samples.
+        
+        Lastly, we create the microphone stream with the callback that processes the recorded audio.
+        '''
         
         # setting the sample rate and mic buffer size
         self.sample_rate = self.sample_rate or sd.query_devices(self.device, 'input')['default_samplerate']
         self.num_samples = int(self.sample_rate * self.block_duration)
         self.blocksize = self.num_samples // 1000
+        
+        # queue to hold the mic data
+        self.q = queue.Queue()
 
         def enqueue_audio(indata, frames, time, status):
-            '''Places audio data on the queue.
+            '''Places buffered audio data on the queue.
             '''
             if any(indata):
                 self.q.put(indata)
@@ -94,13 +110,17 @@ class SoundDeviceMic(AudioStream):
         
     def run(self):
         '''Streams audio until the user stops or interrupts the process.
+        
+        We continuously check whether there are any audio samples on the queue.
+        If there are, we send them over the ZMQ socket.  
         '''
         # start the microphone stream
         self.stream.start()
         print('Streaming live mic audio...')
+        
         while True:
+            # send any audio on the queue
             try:
-                # send any audio on the queue
                 if not self.q.empty():
                     self.send_audio(self.q.get())
                     
@@ -116,38 +136,53 @@ class SoundDeviceMic(AudioStream):
         print('Live mic stopped.')
             
 
-# %% ../nbs/01_mic.ipynb 7
+# %% ../nbs/01_mic.ipynb 15
 class SpeechRecogMic(AudioStream):
     def __init__(self, *args,
                  energy: int = 500,
                  pause: float = 0.8,
                  dynamic_energy: bool = False,
                  **kwargs):
+        '''Streams microphone audio with the SoundRecognizer library.
+        '''
         super().__init__(*args, **kwargs)
         store_attr()
         self.setup_stream()
         
     def setup_stream(self):
+        '''Creates the energy-aware speech recognizer and microphone stream.
+        '''
         
-        # load the speech recognizer with CLI settings
+        # loads the speech recognizer with energy and pause parameters
         recog = sr.Recognizer()
         recog.energy_threshold = self.energy
         recog.pause_threshold = self.pause
         recog.dynamic_energy_threshold = self.dynamic_energy
         self.recog = recog
         
+        # initializes the chosen microphone stream
         self.mic = sr.Microphone(device_index=self.device,
                                  sample_rate=self.sample_rate)
 
     def run(self):
+        '''Streams audio until the user stops or interrupts the process.
+        
+        The recognizer `recog` starts recording once the microphone's energy  
+        crosses the threshold. Then, it keeps recording until the energy drops
+        for `pause` seconds.  
+        
+        The raw buffer bytes are then cast as a numpy short-int array and sent
+        over the ZMQ port.
+        '''
         with self.mic as source:
             print("Starting mic stream...")
+            
             while True:
                 # record audio stream into wav
                 try:
                     data = self.recog.listen(source)
                     audio = np.frombuffer(data.frame_data, dtype=np.int16)
-                    audio = audio.flatten().astype(np.float32) / 32768.0
+                    #audio = audio.flatten().astype(np.float32) / 32768.0
                     self.send_audio(audio)
                     
                 except KeyboardInterrupt:
@@ -157,4 +192,5 @@ class SpeechRecogMic(AudioStream):
                 except Exception as e:
                     print(f'Exception: {e}')
                     raise
+                    
             print('Mic stopped.')
